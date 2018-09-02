@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+# A simple Python script to run a lottery on Ardor. Using Ignis assets.
+# Author: malnemark (https://github.com/malnemark)
+
 import sys, json, time, logging, argparse
 
 
@@ -70,13 +73,11 @@ def spin(array):
 
 
 # a fixed query to ask for purchases
-#TODO read out blockTimestamp and set a min timestamp to filter out old TX
 def QueryPayments(account):
     return {'requestType': 'getBlockchainTransactions', 'account': account, 'type': '0', 'subtype': '0', 'executedOnly': 'true','chain':'IGNIS'}
 
 
 # a fixed query to ask outgoing transactions
-#TODO read out blockTimestamp and set a min timestamp to filter out old TX
 def QueryAssetTransfers(account):
     return {'requestType': 'getBlockchainTransactions', 'account': account, 'type': '2', 'subtype': '1', 'executedOnly': 'true','chain':'IGNIS'}
 
@@ -87,36 +88,49 @@ def QueryUnconfirmedDeliveries(account):
 if __name__ == "__main__":
 
     #set up a simple logger
-    logger = logging.getLogger('ARDR_lottery')
+    logger = logging.getLogger('ardor-lottery')
     logger.setLevel(logging.INFO)
     consoleHandler = logging.StreamHandler(sys.stdout)
     logger.addHandler(consoleHandler)
 
     # get arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--account', help='lottery account', required=True)
-    parser.add_argument('--passphrase', help='passphrase of lottery account', required=True)
-    parser.add_argument('--nodeurl', help='nodeurl, default is http://localhost:26876/nxt', default="http://localhost:26876/nxt")
+    parser.add_argument('conf', help='configuration file')
+    #parser.add_argument('--account', help='lottery account')
+    #parser.add_argument('--passphrase', help='passphrase of lottery account')
+    #parser.add_argument('--nodeurl', help='nodeurl, default is http://localhost:26876/nxt', default="http://localhost:26876/nxt")
+    #parser.add_argument('--assets', help='list of assetids')
+
     args = parser.parse_args()
 
+    with open(args.conf) as json_file:
+        config = json.load(json_file)
+
+    print("Starting up the lottery on account ",config['account'], "with assets:")
+    print(config['assets'])
+
+    nodeurl = config['nodeurl']
+    account = config['account']
+    assetreg = config['assets']
+
     while True:
-        status = sendQuery(args.nodeurl,{'requestType':'getBlockchainStatus'});
+        status = sendQuery(nodeurl,{'requestType':'getBlockchainStatus'});
 
         logger.info("querying the blockchain for a new purchase")
-        output = sendQuery(args.nodeurl,QueryPayments(args.account))
+        output = sendQuery(nodeurl,QueryPayments(account))
         payments = json.loads(output.decode('utf-8'))
 
-        buys = detectBuy(payments,"1200000000",BaseAccount,'lottery')
+        buys = detectBuy(payments,"1200000000",account,'lottery')
 
-        output = sendQuery(args.nodeurl,QueryAssetTransfers(args.account))
+        output = sendQuery(nodeurl,QueryAssetTransfers(account))
         assettransfers = json.loads(output.decode('utf-8'))
 
-        output = sendQuery(args.nodeurl,QueryUnconfirmedDeliveries(args.account))
+        output = sendQuery(nodeurl,QueryUnconfirmedDeliveries(account))
         unconfDeliveries = json.loads(output.decode('utf-8'))
 
         try:
             allDeliveries = assettransfers['transactions'] + unconfDeliveries['unconfirmedTransactions']
-            deliveryRequired = matchPurchases(assettransfers['transactions'],buys,BaseAccount)
+            deliveryRequired = matchPurchases(assettransfers['transactions'],buys,account)
         except KeyError:
             deliveryRequired = None # instead of False..
 
@@ -125,7 +139,6 @@ if __name__ == "__main__":
                 logger.info('Delivery for: ',d)
                 print('Delivery for: ',d)
                 assetId = [spin(assetreg), spin(assetreg), spin(assetreg)]
-                #TODO add a doublespend protection -> set a flag TRUE if a delivery has been transmitted, wait for N cycles until delivery would be repeated
                 for aid in assetId:
                     QueryTransferAsset = {'chain':'IGNIS','requestType': 'transferAsset', 'recipient': d['buyer'], 'asset': aid, 'secretPhrase':passPhrase, 'broadcast':'true','message':d['fullHash'],'messageIsText':'true','quantityQNT':'1','feeNQT':'101000000'}
                     resp = sendQuery(args.nodeurl,QueryTransferAsset)
