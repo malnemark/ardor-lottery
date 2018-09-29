@@ -5,7 +5,7 @@
 
 import sys, json, time, logging, argparse
 
-
+# sendQuery from NXTer's example
 def sendQuery(nodeurl,Query):
   """function to query the Ardor API"""
   from urllib import parse, request
